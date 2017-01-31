@@ -65,7 +65,7 @@ void printHelp()
     Serial.println("INITKEY <index: 0-" NUM_PRIVATE_KEYS_STR "> <CVN ID:0x12345678> <sha256 hash>\r\n\t- initialises a pre-seeded key");
     Serial.println("INIT <PIN> <admin pub key #1> <admin pub key #2> <admin pub key #3> <device manager private key>\r\n\t- initialises the token");
     Serial.println("ERASE <optional: admin signature>\r\n\t- erases ALL configuration data from the token. It can than safely be initialised again for the next user");
-    Serial.println("RSTKEY <index: 0-" NUM_PRIVATE_KEYS_STR "> <optional: sha256 hash>\r\n\t- cleans and pre-seeds a key");
+    Serial.println("RSTKEY <index: 0-" NUM_PRIVATE_KEYS_STR "> <optional: admin signature>\r\n\t- cleans and pre-seeds a key");
     Serial.println("GETPBKY <key index: 0-" NUM_PRIVATE_KEYS_STR ">\r\n\t- prints the requested public key DER encoded. First line is uncompressed, second is the compressed key");
     Serial.println("SNONCE <key index: 0-" NUM_PRIVATE_KEYS_STR "> <sha256 hashToSign> <sha256 randomData>\r\n\t- creates a new nonce pair, stores the private part on the device and prints out the public part");
     Serial.println("CLRPOOL\r\n\t- clears the nonce pool");
@@ -435,7 +435,7 @@ static bool cmdEraseToken(const char **tokens, const uint8_t nTokens)
     if (!createHash(dataSeed, sizeof(dataSeed), hash))
         return fasitoError(E_COULD_NOT_CREATE_HASH);
 
-    int8_t res = verifyAdminSignature(tokens[0], hash);
+    int8_t res = verifyAdminSignature(nTokens ? tokens[0] : (char *)0, hash);
     if (!res)
         return fasitoError(E_INVALID_ADMIN_SIGNATURE);
     else if (res == -1)
