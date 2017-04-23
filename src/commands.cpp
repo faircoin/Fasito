@@ -44,6 +44,11 @@ static uint8_t savedNonces[NUM_NONCE_POOL][32];
 static uint8_t singleNonce[32];
 static uint8_t nonceCursor;
 
+enum DeviceSigantureType {
+    INITKEY = 1,
+    RESETKEY
+};
+
 void printHelp()
 {
     printVersion();
@@ -63,6 +68,7 @@ void printHelp()
     Serial.println("SEAL\r\n\t- seals the device by making the flash memory read-only (!! to be implemented !!)");
     Serial.println("INFO\r\n\t- prints out device information");
     Serial.println("INITKEY <index: 0-" NUM_PRIVATE_KEYS_STR "> <CVN ID:0x12345678> <sha256 hash>\r\n\t- initialises a pre-seeded key");
+    Serial.println("KYPROOF <index: 0-" NUM_PRIVATE_KEYS_STR ">\r\n\t- creates a key proof signature for the key");
     Serial.println("INIT <PIN> <admin pub key #1> <admin pub key #2> <admin pub key #3> <device manager private key>\r\n\t- initialises the token");
     Serial.println("ERASE <optional: admin signature>\r\n\t- erases ALL configuration data from the token. It can than safely be initialised again for the next user");
     Serial.println("RSTKEY <index: 0-" NUM_PRIVATE_KEYS_STR "> <optional: admin signature>\r\n\t- cleans and pre-seeds a key");
@@ -111,7 +117,7 @@ static int verifyAdminSignature(const char *sig, uint8_t *hash)
     /* EC-Schnorr signatures size is 64 bytes */
     if (!sig || !*sig || strlen(sig) != 64 * 2 ) {
         reverseBytes(hash, 32); // the 'signchaindata' RPC command expects a reversed hash
-        Serial.print("Unlock hash: "); printHex(hash, 32, true);
+        Serial.print("UNLOCK HASH: "); printHex(hash, 32, true);
         return -1;
     }
 
@@ -147,16 +153,34 @@ static bool createHash(const char *dataSeed, const uint16_t seedLen, uint8_t *ha
     return secp256k1_hash_sha256(ctx, hash, data, dataLen) != 0;
 }
 
+static bool createProofSignature(const uint8_t *data, size_t nDataLen)
+{
+    uint8_t hashToSign[32];
+    if (!secp256k1_hash_sha256(ctx, hashToSign, data, 65))
+        return fasitoError(E_COULD_NOT_CREATE_HASH);
+
+    uint8_t sig[64];
+
+    if (!secp256k1_schnorr_sign(ctx, sig, hashToSign, nvram.privateKey[NUM_PRIVATE_KEYS - 1].key, secp256k1_nonce_function_rfc6979, NULL))
+        return fasitoError(E_COULD_NOT_CREATE_SCHNORR_SIG);
+
+    Serial.print("DEVICE SIGNATURE: "); printHex(sig, 64, true);
+
+    return true;
+}
+
 static bool getIndexParameter(const char *indexChar, uint8_t &index, uint8_t maxEntries)
 {
     /* check the index parameter */
     size_t len = strlen(indexChar);
-    if (!*indexChar || len > 2)
+    if (!*indexChar || *indexChar < '0' || *indexChar > '9' || len > 2)
         return fasitoError(E_INVALID_ARGUMENTS);
 
     index = *indexChar - '0';
 
     if (len == 2) {
+        if (!indexChar[1] || indexChar[1] < '0' || indexChar[1] > '9')
+            return fasitoError(E_INVALID_ARGUMENTS);
         index *= 10;
         index += indexChar[1] - '0';
     }
@@ -219,6 +243,9 @@ static bool checkDuplicateKeyInfo(uint32_t nNodeId, uint8_t *key)
 static bool cmdInitFasito(const char **tokens, const uint8_t nTokens)
 {
     int i;
+
+    if (nTokens != 5)
+        return fasitoError(E_INVALID_ARGUMENTS);
 
     if (nvram.fasitoStatus != nvram.EMPTY)
         return fasitoError(E_TOKEN_ALREADY_INITIALIZED);
@@ -304,7 +331,6 @@ static bool cmdCheckPin(const char **tokens, const uint8_t nTokens)
 
     loggedIn = true;
     return true;
-
 }
 
 /**
@@ -360,12 +386,20 @@ static bool cmdResetPin(const char **tokens, const uint8_t nTokens)
     char dataSeed[22 + MAX_PIN_LENGTH] = {"Fasito - PIN Recovery."};
     uint8_t hash[32];
 
+    if (nTokens < 1 || nTokens > 2)
+        return fasitoError(E_INVALID_ARGUMENTS);
+
     const char *pin = tokens[0];
-    if (!pin) return fasitoError(E_NO_PIN);
+    if (!pin)
+        return fasitoError(E_NO_PIN);
 
     size_t pinLen = strlen(pin);
-    if (pinLen < MIN_PIN_LENGTH) return fasitoError(E_PIN_TOO_SHORT);
-    if (pinLen > MAX_PIN_LENGTH) return fasitoError(E_PIN_TOO_LONG);
+    if (!pinLen)
+        return fasitoError(E_NO_PIN);
+    if (pinLen < MIN_PIN_LENGTH)
+        return fasitoError(E_PIN_TOO_SHORT);
+    if (pinLen > MAX_PIN_LENGTH)
+        return fasitoError(E_PIN_TOO_LONG);
 
     memset(&dataSeed[22], 0, MAX_PIN_LENGTH);
     memcpy(&dataSeed[22], pin, pinLen);
@@ -395,16 +429,19 @@ static bool cmdResetKey(const char **tokens, const uint8_t nTokens)
     char dataSeed[22 + 32] = {"Fasito - KEY Recovery."};
     uint8_t hash[32];
 
+    if (nTokens < 1 || nTokens > 2)
+        return fasitoError(E_INVALID_ARGUMENTS);
+
     uint8_t index = 0;
     if (!getIndexParameter(tokens[0], index, NUM_PRIVATE_KEYS - 2))
         return false;
 
-    PrivateKey *p = &nvram.privateKey[index];
+    PrivateKey &p = nvram.privateKey[index];
 
-    if (p->status != PrivateKey::INITIALISED)
+    if (p.status != PrivateKey::INITIALISED)
         return fasitoError(E_SLOT_NOT_CONFIGURED);
 
-    memcpy(&dataSeed[22], p->key, 32);
+    memcpy(&dataSeed[22], p.key, 32);
 
     if (!createHash(dataSeed, sizeof(dataSeed), hash))
         return fasitoError(E_COULD_NOT_CREATE_HASH);
@@ -412,12 +449,22 @@ static bool cmdResetKey(const char **tokens, const uint8_t nTokens)
     int8_t res = verifyAdminSignature(tokens[1], hash);
     if (!res)
         return fasitoError(E_INVALID_ADMIN_SIGNATURE);
-    else if (res == -1)
-        return true;
+    else if (res == -1) {
+        uint8_t data[69] = { DeviceSigantureType::RESETKEY }; /* type:1 + CVNID:4 + pubkey:64 = 69 */
+        if (!secp256k1_ec_pubkey_create(ctx, (secp256k1_pubkey *)&data[5], p.key))
+            return fasitoErrorStr("could not create public key.");
 
-    p->nodeId = 0;
-    p->status = PrivateKey::SEEDED;
-    memcpy(p->key, nvram.privateKey[NUM_PRIVATE_KEYS - 1].key, 32);
+        uint8_t *pNodeId = (uint8_t *)&p.nodeId;
+        data[1] = pNodeId[3];
+        data[2] = pNodeId[2];
+        data[3] = pNodeId[1];
+        data[4] = pNodeId[0];
+        return createProofSignature(data, sizeof(data));
+    }
+
+    p.nodeId = 0;
+    p.status = PrivateKey::SEEDED;
+    memcpy(p.key, nvram.privateKey[NUM_PRIVATE_KEYS - 1].key, 32);
     writeEEPROM(&nvram);
 
     Serial.println("private key has been reset successfully.");
@@ -431,6 +478,9 @@ static bool cmdEraseToken(const char **tokens, const uint8_t nTokens)
 {
     const char dataSeed[] = {"Fasito - ERASE Token"};
     uint8_t hash[32];
+
+    if (nTokens > 1)
+        return fasitoError(E_INVALID_ARGUMENTS);
 
     if (!createHash(dataSeed, sizeof(dataSeed), hash))
         return fasitoError(E_COULD_NOT_CREATE_HASH);
@@ -635,7 +685,6 @@ static bool doCreateNoncePair(const char **tokens, const uint8_t nTokens, uint8_
     return true;
 }
 
-
 /**
  * NONCE <key index: 0-7> <sha256 hashToSign> <sha256 randomData>
  */
@@ -747,6 +796,42 @@ static bool cmdGetPublicKey(const char **tokens, const uint8_t nTokens)
 }
 
 /**
+ * KYPROOF <key index: 0-6>
+ */
+static bool cmdCreateKeyProof(const char **tokens, const uint8_t nTokens)
+{
+    if (nTokens != 1)
+        return fasitoError(E_INVALID_ARGUMENTS);
+
+    uint8_t index = 0;
+    if (!getIndexParameter(tokens[0], index, NUM_PRIVATE_KEYS - 2))
+        return false;
+
+    PrivateKey &p = nvram.privateKey[index];
+
+    if (p.status != PrivateKey::INITIALISED)
+        return fasitoError(E_SLOT_NOT_CONFIGURED);
+
+    uint8_t data[69] = { DeviceSigantureType::INITKEY }; /* type:1 + CVNID:4 + pubkey:64 = 69 */
+    if (!secp256k1_ec_pubkey_create(ctx, (secp256k1_pubkey *)&data[5], p.key))
+        return fasitoErrorStr("could not create public key.");
+
+    uint8_t *pNodeId = (uint8_t *)&p.nodeId;
+    data[1] = pNodeId[3];
+    data[2] = pNodeId[2];
+    data[3] = pNodeId[1];
+    data[4] = pNodeId[0];
+
+    if (!createProofSignature(data, sizeof(data)))
+        return false;
+
+    Serial.print("RAWPUBKEY: "); printHex(&data[1], 64, true);
+    Serial.print("DATA: "); printHex(data, sizeof(data), true);
+
+    return true;
+}
+
+/**
  * UPDATE <schnorr signature>
  */
 static bool cmdUpdateFirmware(const char **tokens, const uint8_t nTokens)
@@ -770,7 +855,7 @@ static bool cmdClearNoncePool(const char **tokens, const uint8_t nTokens)
 }
 
 #if ENABLE_INSCURE_FUNC
-static bool cmdTMP(const char **tokens, const uint8_t nTokens)
+static bool cmdDUMP(const char **tokens, const uint8_t nTokens)
 {
     uint8_t chunck;
     int i;
@@ -792,7 +877,7 @@ static bool cmdTMP(const char **tokens, const uint8_t nTokens)
         Serial.print(i); Serial.print(":"); printHex(savedNonces[i], 32, true);
     }
 
-    Serial.println("\r\nSINGLE NONDE:");
+    Serial.println("\r\nSINGLE NONCE:");
     printHex(singleNonce, 32, true);
     Serial.println();
     return true;
@@ -876,8 +961,9 @@ const Command commands[] = {
         {"UPDATE",  cmdUpdateFirmware,                   6, true },
         {"SNONCE",  cmdCreateSingleNonce,                6, true },
         {"CLRPOOL", cmdClearNoncePool,                   7, true },
+        {"KYPROOF", cmdCreateKeyProof,                   7, true },
 #if ENABLE_INSCURE_FUNC
-        {"DUMP",    cmdTMP,                              4, false },
+        {"DUMP",    cmdDUMP,                             4, false },
         {"SETKEY",  cmdSetKey,                           6, true },
 #endif
 };
