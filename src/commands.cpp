@@ -18,7 +18,7 @@
  * If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "Arduino.h"
+#include <Arduino.h>
 #include <string.h>
 #include <secp256k1.h>
 #include <secp256k1_schnorr.h>
@@ -153,18 +153,14 @@ static bool createHash(const char *dataSeed, const uint16_t seedLen, uint8_t *ha
     return secp256k1_hash_sha256(ctx, hash, data, dataLen) != 0;
 }
 
-static bool createProofSignature(const uint8_t *data, size_t nDataLen)
+static bool createProofSignature(uint8_t *sig, const uint8_t *data, const size_t nDataLen)
 {
     uint8_t hashToSign[32];
-    if (!secp256k1_hash_sha256(ctx, hashToSign, data, 65))
+    if (!secp256k1_hash_sha256(ctx, hashToSign, data, nDataLen))
         return fasitoError(E_COULD_NOT_CREATE_HASH);
-
-    uint8_t sig[64];
 
     if (!secp256k1_schnorr_sign(ctx, sig, hashToSign, nvram.privateKey[NUM_PRIVATE_KEYS - 1].key, secp256k1_nonce_function_rfc6979, NULL))
         return fasitoError(E_COULD_NOT_CREATE_SCHNORR_SIG);
-
-    Serial.print("DEVICE SIGNATURE: "); printHex(sig, 64, true);
 
     return true;
 }
@@ -459,7 +455,13 @@ static bool cmdResetKey(const char **tokens, const uint8_t nTokens)
         data[2] = pNodeId[2];
         data[3] = pNodeId[1];
         data[4] = pNodeId[0];
-        return createProofSignature(data, sizeof(data));
+
+        uint8_t sig[64];
+        if (!createProofSignature(sig, data, sizeof(data))) {
+            return false;
+        }
+
+        Serial.print("DEVICE SIGNATURE: "); printHex(sig, 64, true);
     }
 
     p.nodeId = 0;
@@ -822,11 +824,14 @@ static bool cmdCreateKeyProof(const char **tokens, const uint8_t nTokens)
     data[3] = pNodeId[1];
     data[4] = pNodeId[0];
 
-    if (!createProofSignature(data, sizeof(data)))
+    uint8_t sig[64];
+    if (!createProofSignature(sig, data, sizeof(data))) {
         return false;
+    }
 
+    Serial.print("SIG DATA : "); printHex(data, sizeof(data), true);
     Serial.print("RAWPUBKEY: "); printHex(&data[1], 64, true);
-    Serial.print("DATA: "); printHex(data, sizeof(data), true);
+    Serial.print("SIGNATURE: "); printHex(sig, 64, true);
 
     return true;
 }

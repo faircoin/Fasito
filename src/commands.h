@@ -35,5 +35,6 @@ extern void printHelp();
 extern void printVersion();
 extern void printStatus();
 extern void initNonceStorage();
+extern const Command *getCommand(char *buf);
 
 #endif /* SRC_COMMANDS_H_ */
