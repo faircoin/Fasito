@@ -208,7 +208,7 @@ size_t Print::printNumberHex(unsigned long n)
         p = buf + (sizeof(buf));
         do {
                 digit = n & 15;
-                *--p = (digit < 10) ? '0' + digit : 'A' + digit - 10;
+                *--p = (digit < 10) ? '0' + digit : 'a' + digit - 10;
                 n >>= 4;
         } while (n);
         return write(p, sizeof(buf) - (p - buf));
@@ -236,7 +236,7 @@ size_t Print::printNumberAny(unsigned long n, uint8_t base)
                 tmp = n;
                 n = n / base;
                 digit = tmp - n * base;
-                *--p = (digit < 10) ? '0' + digit : 'A' + digit - 10;
+                *--p = (digit < 10) ? '0' + digit : 'a' + digit - 10;
         } while (n);
         return write(p, sizeof(buf) - (p - buf));
 }
@@ -265,7 +265,7 @@ size_t Print::printNumber(unsigned long n, uint8_t base, uint8_t sign)
 		i = sizeof(buf) - 1;
 		while (1) {
 			digit = n % base;
-			buf[i] = ((digit < 10) ? '0' + digit : 'A' + digit - 10);
+			buf[i] = ((digit < 10) ? '0' + digit : 'a' + digit - 10);
 			n /= base;
 			if (n == 0) break;
 			i--;
