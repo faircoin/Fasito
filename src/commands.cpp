@@ -65,7 +65,8 @@ void printHelp()
     Serial.println("PARTSIG <key index: 0-" NUM_PRIVATE_KEYS_STR "> <nonce slot: 0-" NUM_NONCE_POOL_STR "> <sha256 hashToSign> <sum of all other public nonces>\r\n\t- creates partial signature");
     Serial.println("ECDSA <index: 0-" NUM_PRIVATE_KEYS_STR "> <sha256 hashToSign>\r\n\t- creates an ECDSA signature of the hashToSign");
     Serial.println("SCHNORR <index: 0-" NUM_PRIVATE_KEYS_STR "> <sha256 hashToSign>\r\n\t- creates an EC-Schnorr signature of the hashToSign");
-    Serial.println("SEAL\r\n\t- seals the device by making the flash memory read-only (!! to be implemented !!)");
+    Serial.println("SEAL\r\n\t- seals the device by making the flash memory read-only");
+    Serial.println("UNSEAL\r\n\t- un-seals the device by making the flash memory read-write again");
     Serial.println("INFO\r\n\t- prints out device information");
     Serial.println("INITKEY <index: 0-" NUM_PRIVATE_KEYS_STR "> <CVN ID:0x12345678> <sha256 hash>\r\n\t- initialises a pre-seeded key");
     Serial.println("KYPROOF <index: 0-" NUM_PRIVATE_KEYS_STR ">\r\n\t- creates a key proof signature for the key");
@@ -75,29 +76,35 @@ void printHelp()
     Serial.println("GETPBKY <key index: 0-" NUM_PRIVATE_KEYS_STR ">\r\n\t- prints the requested public key DER encoded. First line is uncompressed, second is the compressed key");
     Serial.println("SNONCE <key index: 0-" NUM_PRIVATE_KEYS_STR "> <sha256 hashToSign> <sha256 randomData>\r\n\t- creates a new nonce pair, stores the private part on the device and prints out the public part");
     Serial.println("CLRPOOL\r\n\t- clears the nonce pool");
+#if ENABLE_INSCURE_FUNC
+    Serial.println("DUMP\r\n\t- dumps the contents of the eeporm and internal data structurs");
+    Serial.println("SETKEY <index: 0-" NUM_PRIVATE_KEYS_STR "> <CVN ID:0x12345678> <sha256 hash>\r\n\t- initialises a pre-seeded key");
+#endif
 }
 
 void printVersion()
 {
-    Serial.println(CLS "\r\nFasito - FairCoin signature token V" __FASITO_VERSION__ );
+    Serial.println(CLS "\r\nFasito - FairCoin signature token v" __FASITO_VERSION__ );
 }
 
 void printStatus()
 {
     uint8_t i;
 
-    Serial.print("Fasito version  : V" __FASITO_VERSION__  "\r\n");
-    Serial.print("Serial number   : "); printHex(macAddress, 6, true);
-    Serial.print("Token status    : "); Serial.println(fasitoNVRamStatus[nvram.fasitoStatus]);
-    Serial.print("Config version  : "); Serial.println(nvram.version);
-    Serial.print("Config checksum : "); Serial.print(nvram.checksum, HEX); Serial.println();
-    Serial.print("Nonce pool size : "); Serial.print(NUM_NONCE_POOL); Serial.println("\r\n");
-    Serial.print("User PIN        : "); Serial.print(userPINStatus[nvram.userPin.status]);
+    Serial.print("Fasito version    : v" __FASITO_VERSION__  "\r\n");
+    Serial.print("Serial number     : "); printHex(macAddress, 6, true);
+    Serial.print("Token status      : "); Serial.println(fasitoNVRamStatus[nvram.fasitoStatus]);
+    const uint8_t nProtectionState = FTFL_FSEC;
+    Serial.print("Protection status : 0x"); Serial.print(nProtectionState, BIN); Serial.print(" (0x"); Serial.print(nProtectionState, HEX); Serial.println(")");
+    Serial.print("Config version    : "); Serial.println(nvram.version);
+    Serial.print("Config checksum   : "); Serial.print(nvram.checksum, HEX); Serial.println();
+    Serial.print("Nonce pool size   : "); Serial.print(NUM_NONCE_POOL); Serial.println("\r\n");
+    Serial.print("User PIN          : "); Serial.print(userPINStatus[nvram.userPin.status]);
     Serial.print(" (tries left: ");     Serial.print(nvram.userPin.triesLeft); Serial.println(")\r\n");
 
     for (i = 0 ; i < NUM_PRIVATE_KEYS ; i++) {
         char line[80];
-        sprintf(line, "Key #%d          : 0x%08x (%s%s)", i, (int)nvram.privateKey[i].nodeId, privateKeyStatus[nvram.privateKey[i].status],
+        sprintf(line, "Key #%d            : 0x%08x (%s%s)", i, (int)nvram.privateKey[i].nodeId, privateKeyStatus[nvram.privateKey[i].status],
                 (i + 1 == NUM_PRIVATE_KEYS) ? ", protected" : "");
         Serial.println(line);
     }
@@ -859,6 +866,38 @@ static bool cmdClearNoncePool(const char **tokens, const uint8_t nTokens)
     return true;
 }
 
+/**
+ * SEAL
+ */
+static bool cmdSealFasito(const char **tokens, const uint8_t nTokens)
+{
+    if (nTokens)
+        return fasitoError(E_INVALID_ARGUMENTS);
+
+    Serial.println("About to seal this Fasito in 10 sec.");
+    Serial.flush();
+
+    delay(2000);
+
+    return sealDevice();
+}
+
+/**
+ * UNSEAL
+ */
+static bool cmdUnsealFasito(const char **tokens, const uint8_t nTokens)
+{
+    if (nTokens)
+        return fasitoError(E_INVALID_ARGUMENTS);
+
+    Serial.println("Unsealing this Fasito.");
+    Serial.flush();
+
+    delay(2000);
+
+    return unsealDevice();
+}
+
 #if ENABLE_INSCURE_FUNC
 static bool cmdDUMP(const char **tokens, const uint8_t nTokens)
 {
@@ -956,7 +995,8 @@ const Command commands[] = {
         {"PARTSIG", cmdCreatePartialSchnorrSignature,    7, true },
         {"ECDSA",   cmsEcdsaSign,                        5, true },
         {"SCHNORR", cmdCreateSchnorrSignature,           7, true },
-        {"SEAL",    NULL,                                4, true },
+        {"SEAL",    cmdSealFasito,                       4, true },
+        {"UNSEAL",  cmdUnsealFasito,                     6, true },
         {"INFO",    cmdInfo,                             4, false },
         {"INITKEY", cmdInitKey,                          7, true },
         {"INIT",    cmdInitFasito,                       4, false},

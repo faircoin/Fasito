@@ -22,5 +22,7 @@
 #define SRC_UPDATE_H_
 
 extern bool updateFirmware();
+extern bool sealDevice();
+extern bool unsealDevice();
 
 #endif /* SRC_UPDATE_H_ */

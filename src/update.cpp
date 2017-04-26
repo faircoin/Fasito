@@ -22,6 +22,104 @@
 #include "fasito.h"
 #include "utils.h"
 
+#define WAIT_FOR_COMMAND_COMPLETION(a) while (!(FTFL_FSTAT & FTFL_FSTAT_CCIF)) ;
+#define EXEC_CMD(a) \
+    __disable_irq(); \
+    executeInRAM(&FTFL_FSTAT); \
+    __enable_irq()
+
+#define CMD_PGM4     0x06
+#define CMD_ERSSCR   0x09
+
+#define SEAL_BITS    0b01100100
+#define UNSEAL_BITS  0b11011110
+
+/* Execute the flash command in RAM */
+FASTRUN static void executeInRAM(volatile uint8_t *pFstat)
+{
+    *pFstat = FTFL_FSTAT_CCIF;
+    while (!(*pFstat & FTFL_FSTAT_CCIF)) ; // wait for the command to complete
+}
+
+static bool eraseProtectionBits()
+{
+    Serial.println("Erasing first sector...");
+    Serial.flush(); delay(200);
+
+    // make sure no other operation is taking place
+    WAIT_FOR_COMMAND_COMPLETION();
+
+    // clear previous error flags
+    FTFL_FSTAT = FTFL_FSTAT_ACCERR | FTFL_FSTAT_FPVIOL;
+
+    // command: erase flash sector
+    FTFL_FCCOB0 = CMD_ERSSCR;
+    FTFL_FCCOB1 = 0;
+    FTFL_FCCOB2 = 0;
+    FTFL_FCCOB3 = 0;
+
+    EXEC_CMD();
+
+    WAIT_FOR_COMMAND_COMPLETION();
+
+    return !(FTFL_FSTAT & (FTFL_FSTAT_ACCERR | FTFL_FSTAT_FPVIOL | FTFL_FSTAT_MGSTAT0));
+}
+
+static bool programFlash(const uint8_t value)
+{
+    Serial.print("Programming byte: "); Serial.println(value, HEX);
+    Serial.flush(); delay(200);
+
+    // make sure no other operation is taking place
+    WAIT_FOR_COMMAND_COMPLETION();
+
+    // clear previous error flags
+    FTFL_FSTAT = FTFL_FSTAT_ACCERR | FTFL_FSTAT_FPVIOL;
+
+    // command: program long word
+    FTFL_FCCOB0 = CMD_PGM4;
+
+    // 24bit address to program (0x00040c)
+    FTFL_FCCOB1 = 0x00;
+    FTFL_FCCOB2 = 0x04;
+    FTFL_FCCOB3 = 0x0c;
+
+    // bytes to program
+    FTFL_FCCOB4 = 0xFF;
+    FTFL_FCCOB5 = 0xFF;
+    FTFL_FCCOB6 = 0xFF;
+    FTFL_FCCOB7 = value;
+
+    EXEC_CMD();
+
+    WAIT_FOR_COMMAND_COMPLETION();
+
+    Serial.print("FTFL_FSTAT_ACCERR  : "); Serial.println((FTFL_FSTAT & FTFL_FSTAT_ACCERR  ? "ERROR" : "OK"));
+    Serial.print("FTFL_FSTAT_FPVIOL  : "); Serial.println((FTFL_FSTAT & FTFL_FSTAT_FPVIOL  ? "ERROR" : "OK"));
+    Serial.print("FTFL_FSTAT_MGSTAT0 : "); Serial.println((FTFL_FSTAT & FTFL_FSTAT_MGSTAT0 ? "ERROR" : "OK"));
+
+    return !(FTFL_FSTAT & (FTFL_FSTAT_ACCERR | FTFL_FSTAT_FPVIOL | FTFL_FSTAT_MGSTAT0));
+}
+
+bool sealDevice()
+{
+    if (!programFlash(SEAL_BITS))
+        return false;
+
+    return true;
+}
+
+bool unsealDevice()
+{
+    if (!eraseProtectionBits())
+        return false;
+
+    if (!programFlash(UNSEAL_BITS))
+        return false;
+
+    return true;
+}
+
 #if 0
 extern uint16_t inputBufferIndex;
 
