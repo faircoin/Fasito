@@ -32,6 +32,7 @@
 #include <string.h>
 #include <stdlib.h>
 
+extern char *fcvtf(float val, int decimals, int *decpt, int *sgn);
 
 char * ultoa(unsigned long val, char *buf, int radix) 	
 {
