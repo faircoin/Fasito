@@ -29,6 +29,7 @@
 #include "update.h"
 
 #define ENABLE_INSCURE_FUNC 1
+#define ENOUGH_BITS_VALUE 800
 
 extern secp256k1_context *ctx;
 extern uint8_t macAddress[];
@@ -238,6 +239,20 @@ static bool checkDuplicateKeyInfo(uint32_t nNodeId, uint8_t *key)
     return true;
 }
 
+static uint32_t hasEnoughBits(const uint8_t *hash)
+{
+    uint32_t ret = 0, nZeroCount = 0;
+
+    for (int i = 0 ; i < 32 ; i++) {
+        ret += hash[i];
+        if (!hash[i]) {
+            ++nZeroCount;
+        }
+    }
+
+    return ret > ENOUGH_BITS_VALUE && nZeroCount < 5;
+}
+
 /**
  * Initialise Fasito with the initial PIN, the 3 admin public keys, seeds the private keys and
  * sets the device manager private key
@@ -410,7 +425,7 @@ static bool cmdResetPin(const char **tokens, const uint8_t nTokens)
     if (!createHash(dataSeed, sizeof(dataSeed), hash))
         return fasitoError(E_COULD_NOT_CREATE_HASH);
 
-    int8_t res = verifyAdminSignature(tokens[1], hash);
+    int8_t res = verifyAdminSignature(nTokens == 2 ? tokens[1] : 0, hash);
     if (!res)
         return fasitoError(E_INVALID_ADMIN_SIGNATURE);
     else if (res == -1)
@@ -449,7 +464,7 @@ static bool cmdResetKey(const char **tokens, const uint8_t nTokens)
     if (!createHash(dataSeed, sizeof(dataSeed), hash))
         return fasitoError(E_COULD_NOT_CREATE_HASH);
 
-    int8_t res = verifyAdminSignature(tokens[1], hash);
+    int8_t res = verifyAdminSignature(nTokens == 2 ? tokens[1] : 0, hash);
     if (!res)
         return fasitoError(E_INVALID_ADMIN_SIGNATURE);
     else if (res == -1) {
@@ -562,6 +577,9 @@ static bool cmdInitKey(const char **tokens, const uint8_t nTokens)
     uint8_t newSeedKey[32];
     if (!getHexParameter(tokens[2], newSeedKey, 32))
         return false;
+
+    if (!hasEnoughBits(newSeedKey))
+        return fasitoErrorStr("invalid seed");
 
     PrivateKey *p = &nvram.privateKey[index];
 
@@ -760,6 +778,9 @@ static bool cmdCreatePartialSchnorrSignature(const char **tokens, const uint8_t 
     if (!getHexParameter(tokens[3], othersPublicNonces.data, 64))
         return false;
 
+    if (!hasEnoughBits(savedNonces[nonceSlot]))
+        return fasitoErrorStr("nonce not initialised");
+
     uint8_t partialSig[64];
     if (secp256k1_schnorr_partial_sign(ctx, partialSig, hashToSign, p->key, &othersPublicNonces, savedNonces[nonceSlot]) < 1)
         return fasitoErrorStr("secp256k1_schnorr_partial_sign failed");
@@ -880,7 +901,7 @@ static bool cmdSealFasito(const char **tokens, const uint8_t nTokens)
     if (nTokens)
         return fasitoError(E_INVALID_ARGUMENTS);
 
-    Serial.println("About to seal this Fasito.");
+    Serial.println("Sealing this Fasito.");
     Serial.flush();
 
     return sealDevice();
@@ -891,10 +912,21 @@ static bool cmdSealFasito(const char **tokens, const uint8_t nTokens)
  */
 static bool cmdUnsealFasito(const char **tokens, const uint8_t nTokens)
 {
-    if (nTokens)
+    if (nTokens > 1)
         return fasitoError(E_INVALID_ARGUMENTS);
 
-    Serial.println("Unsealing this Fasito.");
+    uint8_t hash[32];
+    if (!createHash((char *) macAddress, 6, hash))
+        return fasitoError(E_COULD_NOT_CREATE_HASH);
+
+    int8_t res = verifyAdminSignature(nTokens == 1 ? tokens[0] : 0, hash);
+    if (!res)
+        return fasitoError(E_INVALID_ADMIN_SIGNATURE);
+    else if (res == -1) {
+        return true;
+    }
+
+    Serial.println("Un-sealing this Fasito.");
     Serial.flush();
 
     return unsealDevice();
@@ -912,8 +944,10 @@ static bool cmdDUMP(const char **tokens, const uint8_t nTokens)
     printHex((uint8_t *) &nvram + chunck * 64 , sizeof(FasitoNVRam) % 64, true);
 
     Serial.println("\r\nPRIVATE KEYS:");
-    for (i = 0 ; i < NUM_PRIVATE_KEYS ; i++)
+    for (i = 0 ; i < NUM_PRIVATE_KEYS ; i++) {
         pHEX("PRIV", nvram.privateKey[i].key, 32);
+        hasEnoughBits(nvram.privateKey[i].key);
+    }
 
     Serial.println("\r\nNONCES POOL:");
     for (i = 0 ; i < NUM_NONCE_POOL ; i++) {
