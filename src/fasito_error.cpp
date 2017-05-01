@@ -41,9 +41,10 @@ static const char __err20[] = "slot not configured.";
 static const char __err21[] = "duplicate node ID.";
 static const char __err22[] = "duplicate private key.";
 static const char __err23[] = "Could not create Schnorr signature.";
+static const char __err24[] = "Could not program protection bits.";
 
 const char *errorStrings[] = {
         __err01, __err02, __err03, __err04, __err05, __err06, __err07, __err08,
         __err09, __err10, __err11, __err12, __err13, __err14, __err15, __err16,
-        __err17, __err18, __err19, __err20, __err21, __err22, __err23,
+        __err17, __err18, __err19, __err20, __err21, __err22, __err23, __err24,
 };

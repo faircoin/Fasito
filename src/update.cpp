@@ -21,12 +21,11 @@
 #include "Arduino.h"
 #include "fasito.h"
 #include "utils.h"
+#include "fasito_error.h"
 
 #define WAIT_FOR_COMMAND_COMPLETION(a) while (!(FTFL_FSTAT & FTFL_FSTAT_CCIF)) ;
-#define EXEC_CMD(a) \
-    __disable_irq(); \
-    executeInRAM(&FTFL_FSTAT); \
-    __enable_irq()
+
+#define SECTOR_SIZE  0x0800
 
 #define CMD_PGM4     0x06
 #define CMD_ERSSCR   0x09
@@ -34,18 +33,17 @@
 #define SEAL_BITS    0b01100100
 #define UNSEAL_BITS  0b11011110
 
-/* Execute the flash command in RAM */
-FASTRUN static void executeInRAM(volatile uint8_t *pFstat)
+#define B(b) ((b) & 0xff)
+
+/* Execute the flash command */
+FASTRUN static void executeCMD(volatile uint8_t *pFstat)
 {
     *pFstat = FTFL_FSTAT_CCIF;
     while (!(*pFstat & FTFL_FSTAT_CCIF)) ; // wait for the command to complete
 }
 
-static bool eraseProtectionBits()
+FASTRUN static bool eraseSector0()
 {
-    Serial.println("Erasing first sector...");
-    Serial.flush(); delay(200);
-
     // make sure no other operation is taking place
     WAIT_FOR_COMMAND_COMPLETION();
 
@@ -54,22 +52,20 @@ static bool eraseProtectionBits()
 
     // command: erase flash sector
     FTFL_FCCOB0 = CMD_ERSSCR;
+
     FTFL_FCCOB1 = 0;
     FTFL_FCCOB2 = 0;
     FTFL_FCCOB3 = 0;
 
-    EXEC_CMD();
+    executeCMD(&FTFL_FSTAT);
 
     WAIT_FOR_COMMAND_COMPLETION();
 
     return !(FTFL_FSTAT & (FTFL_FSTAT_ACCERR | FTFL_FSTAT_FPVIOL | FTFL_FSTAT_MGSTAT0));
 }
 
-static bool programFlash(const uint8_t value)
+FASTRUN static bool programLongword(const uint32_t address, const uint32_t value)
 {
-    Serial.print("Programming byte: "); Serial.println(value, HEX);
-    Serial.flush(); delay(200);
-
     // make sure no other operation is taking place
     WAIT_FOR_COMMAND_COMPLETION();
 
@@ -79,43 +75,78 @@ static bool programFlash(const uint8_t value)
     // command: program long word
     FTFL_FCCOB0 = CMD_PGM4;
 
-    // 24bit address to program (0x00040c)
-    FTFL_FCCOB1 = 0x00;
-    FTFL_FCCOB2 = 0x04;
-    FTFL_FCCOB3 = 0x0c;
+    // 24bit address to program
+    FTFL_FCCOB1 = B(address >> 16);
+    FTFL_FCCOB2 = B(address >> 8);
+    FTFL_FCCOB3 = B(address);
 
     // bytes to program
-    FTFL_FCCOB4 = 0xFF;
-    FTFL_FCCOB5 = 0xFF;
-    FTFL_FCCOB6 = 0xFF;
-    FTFL_FCCOB7 = value;
+    FTFL_FCCOB4 = B(value >> 24);
+    FTFL_FCCOB5 = B(value >> 16);
+    FTFL_FCCOB6 = B(value >> 8);
+    FTFL_FCCOB7 = B(value);
 
-    EXEC_CMD();
+    executeCMD(&FTFL_FSTAT);
 
     WAIT_FOR_COMMAND_COMPLETION();
-
-    Serial.print("FTFL_FSTAT_ACCERR  : "); Serial.println((FTFL_FSTAT & FTFL_FSTAT_ACCERR  ? "ERROR" : "OK"));
-    Serial.print("FTFL_FSTAT_FPVIOL  : "); Serial.println((FTFL_FSTAT & FTFL_FSTAT_FPVIOL  ? "ERROR" : "OK"));
-    Serial.print("FTFL_FSTAT_MGSTAT0 : "); Serial.println((FTFL_FSTAT & FTFL_FSTAT_MGSTAT0 ? "ERROR" : "OK"));
 
     return !(FTFL_FSTAT & (FTFL_FSTAT_ACCERR | FTFL_FSTAT_FPVIOL | FTFL_FSTAT_MGSTAT0));
 }
 
+FASTRUN static bool programFSEC(const uint8_t state)
+{
+    uint8_t sector[SECTOR_SIZE];
+    const uint8_t *pFlash = 0x00;
+
+    __disable_irq();
+
+    for (int i = 0 ; i < SECTOR_SIZE ; i++) {
+        sector[i] = pFlash[i];
+    }
+
+    sector[0x040c] = state;
+
+    if (!eraseSector0()) {
+        __enable_irq();
+        return false;
+    }
+
+    const uint32_t *sectorB64 = (uint32_t *) sector;
+    bool fOK = false;
+    for (int i = 0 ; i < SECTOR_SIZE / 4; i++) {
+        fOK |= programLongword(i * 4, sectorB64[i]);
+    }
+
+    __enable_irq();
+
+    return fOK;
+}
+
+static bool doSeal(bool fSeal)
+{
+    Serial.print(fSeal ? "SEAL: " : "UNSEAL: ");
+    Serial.print("starting to flash... "); Serial.flush();
+
+    if (!programFSEC(fSeal ? SEAL_BITS : UNSEAL_BITS))
+        return fasitoErrorStr("could not program status bits");
+
+    Serial.println("done.");
+
+    return true;
+}
+
 bool sealDevice()
 {
-    if (!programFlash(SEAL_BITS))
-        return false;
+    if (!doSeal(true))
+        return fasitoError(E_COULD_NOT_PROGRAM_PROT_BITS);
 
     return true;
 }
 
 bool unsealDevice()
 {
-    if (!eraseProtectionBits())
-        return false;
-
-    if (!programFlash(UNSEAL_BITS))
-        return false;
+    if (!doSeal(false))
+        return fasitoError(E_COULD_NOT_PROGRAM_PROT_BITS);
 
     return true;
 }

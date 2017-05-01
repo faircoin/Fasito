@@ -45,6 +45,7 @@ enum {
     E_DUPLICATE_NODE_ID,
     E_DUPLICATE_PRIV_KEY,
     E_COULD_NOT_CREATE_SCHNORR_SIG,
+    E_COULD_NOT_PROGRAM_PROT_BITS,
 };
 
 extern const char *errorStrings[];
