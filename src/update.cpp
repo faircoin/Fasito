@@ -112,9 +112,11 @@ FASTRUN static bool programFSEC(const uint8_t state)
     }
 
     const uint32_t *sectorB64 = (uint32_t *) sector;
-    bool fOK = false;
+    bool fOK = true;
     for (int i = 0 ; i < SECTOR_SIZE / 4; i++) {
-        fOK |= programLongword(i * 4, sectorB64[i]);
+        if (!programLongword(i * 4, sectorB64[i])) {
+            fOK = false;
+        }
     }
 
     __enable_irq();
