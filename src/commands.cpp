@@ -836,9 +836,15 @@ static bool cmdCreateKeyProof(const char **tokens, const uint8_t nTokens)
         return false;
     }
 
-    Serial.print("SIG DATA : "); printHex(data, sizeof(data), true);
-    Serial.print("RAWPUBKEY: "); printHex(&data[1], 64, true);
-    Serial.print("SIGNATURE: "); printHex(sig, 64, true);
+    size_t keyLen = 74;
+    uint8_t derKey[keyLen];
+    if (!secp256k1_ec_pubkey_serialize(ctx, derKey, &keyLen, (secp256k1_pubkey *)&data[5], SECP256K1_EC_UNCOMPRESSED))
+        return fasitoErrorStr("could not serialise public key.");
+
+    Serial.print("SIG DATA   : "); printHex(data, sizeof(data), true);
+    Serial.print("RAW PUBKEY : "); printHex(&data[5], 64, true);
+    Serial.print("DER PUBKEY : "); printHex(derKey, keyLen, true);
+    Serial.print("SIGNATURE  : "); printHex(sig, 64, true);
 
     return true;
 }
@@ -874,10 +880,8 @@ static bool cmdSealFasito(const char **tokens, const uint8_t nTokens)
     if (nTokens)
         return fasitoError(E_INVALID_ARGUMENTS);
 
-    Serial.println("About to seal this Fasito in 10 sec.");
+    Serial.println("About to seal this Fasito.");
     Serial.flush();
-
-    delay(2000);
 
     return sealDevice();
 }
@@ -892,8 +896,6 @@ static bool cmdUnsealFasito(const char **tokens, const uint8_t nTokens)
 
     Serial.println("Unsealing this Fasito.");
     Serial.flush();
-
-    delay(2000);
 
     return unsealDevice();
 }
@@ -924,6 +926,13 @@ static bool cmdDUMP(const char **tokens, const uint8_t nTokens)
     Serial.println("\r\nSINGLE NONCE:");
     printHex(singleNonce, 32, true);
     Serial.println();
+
+    Serial.println("\r\nSECTOR #0:");
+    for (chunck = 0 ; chunck < 2048 / 64 ; chunck++) {
+        printHex((uint8_t *) (chunck * 64), 64, true);
+    }
+    Serial.println();
+
     return true;
 }
 
