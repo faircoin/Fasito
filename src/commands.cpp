@@ -431,8 +431,7 @@ static bool cmdResetPin(const char **tokens, const uint8_t nTokens)
     else if (res == -1)
         return true;
 
-    if (nTokens != 2)
-        return fasitoError(E_INVALID_ARGUMENTS);
+    nvram.userPin.status = UserPIN::SET;
 
     const char *t[] = { nvram.userPin.pin, pin };
 
