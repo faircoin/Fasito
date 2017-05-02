@@ -24,6 +24,7 @@
 #include <secp256k1.h>
 
 #define __FASITO_VERSION__ "1.1"
+#define CONFIG_VERSION 1
 
 /* serial receive buffer size */
 #define INPUT_BUFFER_SIZE 2048

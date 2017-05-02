@@ -29,7 +29,12 @@
 #include "update.h"
 
 #define ENABLE_INSCURE_FUNC 1
-#define ENOUGH_BITS_VALUE 800
+#if ENABLE_INSCURE_FUNC
+#warning Compiling with unsecure functions
+#endif
+
+#define ENOUGH_BITS_VALUE   800
+#define AUTH_REQ_LEN        39
 
 extern secp256k1_context *ctx;
 extern uint8_t macAddress[];
@@ -45,9 +50,11 @@ static uint8_t savedNonces[NUM_NONCE_POOL][32];
 static uint8_t singleNonce[32];
 static uint8_t nonceCursor;
 
-enum DeviceSigantureType {
-    INITKEY = 1,
-    RESETKEY
+enum AuthorisationRequestType {
+    RESET_PIN = 1,
+    RESET_KEY,
+    ERASE_TOKEN,
+    UNSEAL_TOKEN
 };
 
 void printHelp()
@@ -120,13 +127,11 @@ void initNonceStorage()
     memset(singleNonce, 0, sizeof(singleNonce));
 }
 
-static int verifyAdminSignature(const char *sig, uint8_t *hash)
+static bool verifyAdminSignature(const char *sig, uint8_t *hash)
 {
     /* EC-Schnorr signatures size is 64 bytes */
     if (!sig || !*sig || strlen(sig) != 64 * 2 ) {
-        reverseBytes(hash, 32); // the 'signchaindata' RPC command expects a reversed hash
-        Serial.print("UNLOCK HASH: "); printHex(hash, 32, true);
-        return -1;
+        return false;
     }
 
     Serial.println("checking signature.");
@@ -134,7 +139,7 @@ static int verifyAdminSignature(const char *sig, uint8_t *hash)
     uint8_t schnorrSig[64];
     size_t sigLen = strlen(sig) / 2;
     if (!parseHex(schnorrSig, sig, sigLen))
-        return 0;
+        return false;
 
     uint8_t i;
     bool verified = false;
@@ -149,19 +154,7 @@ static int verifyAdminSignature(const char *sig, uint8_t *hash)
     return verified ? 1 : 0;
 }
 
-static bool createHash(const char *dataSeed, const uint16_t seedLen, uint8_t *hash)
-{
-    uint16_t dataLen = MAX_PIN_LENGTH + 6 + seedLen;
-    uint8_t data[dataLen];
-
-    memcpy(data, nvram.userPin.pin, MAX_PIN_LENGTH);
-    memcpy(&data[MAX_PIN_LENGTH], macAddress, 6);
-    memcpy(&data[MAX_PIN_LENGTH + 6], dataSeed, seedLen);
-
-    return secp256k1_hash_sha256(ctx, hash, data, dataLen) != 0;
-}
-
-static bool createProofSignature(uint8_t *sig, const uint8_t *data, const size_t nDataLen)
+static bool createDeviceSignature(uint8_t *sig, const uint8_t *data, const size_t nDataLen)
 {
     uint8_t hashToSign[32];
     if (!secp256k1_hash_sha256(ctx, hashToSign, data, nDataLen))
@@ -169,6 +162,33 @@ static bool createProofSignature(uint8_t *sig, const uint8_t *data, const size_t
 
     if (!secp256k1_schnorr_sign(ctx, sig, hashToSign, nvram.privateKey[NUM_PRIVATE_KEYS - 1].key, secp256k1_nonce_function_rfc6979, NULL))
         return fasitoError(E_COULD_NOT_CREATE_SCHNORR_SIG);
+
+    return true;
+}
+
+static bool createAuthorisationRequest(const uint8_t type, const uint8_t *privData, const uint16_t nPrivDataLen, uint8_t *requestHash)
+{
+    uint8_t data[AUTH_REQ_LEN];
+
+    uint8_t privHash[32];
+    if (!secp256k1_hash_sha256(ctx, privHash, privData, nPrivDataLen))
+        return fasitoError(E_COULD_NOT_CREATE_HASH);
+
+    data[0] = type;
+    memcpy(&data[1], macAddress, 6);
+    memcpy(&data[7], privHash, 32);
+
+    if (!secp256k1_hash_sha256(ctx, requestHash, data, AUTH_REQ_LEN))
+        return fasitoError(E_COULD_NOT_CREATE_HASH);
+
+    uint8_t sig[64];
+    if (!secp256k1_schnorr_sign(ctx, sig, requestHash, nvram.privateKey[NUM_PRIVATE_KEYS - 1].key, secp256k1_nonce_function_rfc6979, NULL))
+        return fasitoError(E_COULD_NOT_CREATE_SCHNORR_SIG);
+
+    Serial.println("AUTHREQ:");
+    printHex(data, AUTH_REQ_LEN, true);
+    printHex(requestHash, 32, true);
+    printHex(sig, 64, true);
 
     return true;
 }
@@ -269,7 +289,7 @@ static bool cmdInitFasito(const char **tokens, const uint8_t nTokens)
         return fasitoError(E_TOKEN_ALREADY_INITIALIZED);
 
     memset(&nvram, 0, sizeof(FasitoNVRam));
-    nvram.version = 1;
+    nvram.version = CONFIG_VERSION;
 
     UserPIN *up = &nvram.userPin;
     const char *pin = tokens[0];
@@ -401,9 +421,6 @@ static bool cmdChangePin(const char **tokens, const uint8_t nTokens)
  */
 static bool cmdResetPin(const char **tokens, const uint8_t nTokens)
 {
-    char dataSeed[22 + MAX_PIN_LENGTH] = {"Fasito - PIN Recovery."};
-    uint8_t hash[32];
-
     if (nTokens < 1 || nTokens > 2)
         return fasitoError(E_INVALID_ARGUMENTS);
 
@@ -419,17 +436,19 @@ static bool cmdResetPin(const char **tokens, const uint8_t nTokens)
     if (pinLen > MAX_PIN_LENGTH)
         return fasitoError(E_PIN_TOO_LONG);
 
-    memset(&dataSeed[22], 0, MAX_PIN_LENGTH);
-    memcpy(&dataSeed[22], pin, pinLen);
+    uint8_t privData[22 + MAX_PIN_LENGTH] = {"Fasito - PIN Recovery."};
+    memset(&privData[22], 0, MAX_PIN_LENGTH);
+    memcpy(&privData[22], pin, pinLen);
 
-    if (!createHash(dataSeed, sizeof(dataSeed), hash))
+    uint8_t requestHash[32];
+    if (!createAuthorisationRequest(AuthorisationRequestType::RESET_PIN, privData, 22 + MAX_PIN_LENGTH, requestHash))
         return fasitoError(E_COULD_NOT_CREATE_HASH);
 
-    int8_t res = verifyAdminSignature(nTokens == 2 ? tokens[1] : 0, hash);
-    if (!res)
-        return fasitoError(E_INVALID_ADMIN_SIGNATURE);
-    else if (res == -1)
+    if (nTokens != 2)
         return true;
+
+    if (!verifyAdminSignature(tokens[1], requestHash))
+        return fasitoError(E_INVALID_ADMIN_SIGNATURE);
 
     nvram.userPin.status = UserPIN::SET;
 
@@ -443,9 +462,6 @@ static bool cmdResetPin(const char **tokens, const uint8_t nTokens)
  */
 static bool cmdResetKey(const char **tokens, const uint8_t nTokens)
 {
-    char dataSeed[22 + 32] = {"Fasito - KEY Recovery."};
-    uint8_t hash[32];
-
     if (nTokens < 1 || nTokens > 2)
         return fasitoError(E_INVALID_ARGUMENTS);
 
@@ -458,39 +474,33 @@ static bool cmdResetKey(const char **tokens, const uint8_t nTokens)
     if (p.status != PrivateKey::INITIALISED)
         return fasitoError(E_SLOT_NOT_CONFIGURED);
 
-    memcpy(&dataSeed[22], p.key, 32);
+    uint8_t data[68]; /* CVNID:4 + pubkey:64 = 68 */
 
-    if (!createHash(dataSeed, sizeof(dataSeed), hash))
+    uint8_t *pNodeId = (uint8_t *)&p.nodeId;
+    data[0] = pNodeId[3];
+    data[1] = pNodeId[2];
+    data[2] = pNodeId[1];
+    data[3] = pNodeId[0];
+
+    if (!secp256k1_ec_pubkey_create(ctx, (secp256k1_pubkey *)&data[4], p.key))
+        return fasitoErrorStr("could not create public key.");
+
+    uint8_t requestHash[32];
+    if (!createAuthorisationRequest(AuthorisationRequestType::RESET_KEY, data, 68, requestHash))
         return fasitoError(E_COULD_NOT_CREATE_HASH);
 
-    int8_t res = verifyAdminSignature(nTokens == 2 ? tokens[1] : 0, hash);
-    if (!res)
+    if (nTokens != 2)
+        return true;
+
+    if (!verifyAdminSignature(tokens[1], requestHash))
         return fasitoError(E_INVALID_ADMIN_SIGNATURE);
-    else if (res == -1) {
-        uint8_t data[69] = { DeviceSigantureType::RESETKEY }; /* type:1 + CVNID:4 + pubkey:64 = 69 */
-        if (!secp256k1_ec_pubkey_create(ctx, (secp256k1_pubkey *)&data[5], p.key))
-            return fasitoErrorStr("could not create public key.");
-
-        uint8_t *pNodeId = (uint8_t *)&p.nodeId;
-        data[1] = pNodeId[3];
-        data[2] = pNodeId[2];
-        data[3] = pNodeId[1];
-        data[4] = pNodeId[0];
-
-        uint8_t sig[64];
-        if (!createProofSignature(sig, data, sizeof(data))) {
-            return false;
-        }
-
-        Serial.print("DEVICE SIGNATURE: "); printHex(sig, 64, true);
-    }
 
     p.nodeId = 0;
     p.status = PrivateKey::SEEDED;
     memcpy(p.key, nvram.privateKey[NUM_PRIVATE_KEYS - 1].key, 32);
     writeEEPROM(&nvram);
 
-    Serial.println("private key has been reset successfully.");
+    Serial.println("private key has been erased successfully.");
     return true;
 }
 
@@ -499,27 +509,33 @@ static bool cmdResetKey(const char **tokens, const uint8_t nTokens)
  */
 static bool cmdEraseToken(const char **tokens, const uint8_t nTokens)
 {
-    const char dataSeed[] = {"Fasito - ERASE Token"};
-    uint8_t hash[32];
+    const uint8_t dataSeed[] = {"Fasito - ERASE Token"};
 
     if (nTokens > 1)
         return fasitoError(E_INVALID_ARGUMENTS);
 
-    if (!createHash(dataSeed, sizeof(dataSeed), hash))
+    uint8_t requestHash[32];
+    if (!createAuthorisationRequest(AuthorisationRequestType::ERASE_TOKEN, dataSeed, sizeof(dataSeed), requestHash))
         return fasitoError(E_COULD_NOT_CREATE_HASH);
 
-    int8_t res = verifyAdminSignature(nTokens ? tokens[0] : (char *)0, hash);
-    if (!res)
-        return fasitoError(E_INVALID_ADMIN_SIGNATURE);
-    else if (res == -1)
+    if (nTokens != 1)
         return true;
 
+    if (!verifyAdminSignature(tokens[0], requestHash))
+        return fasitoError(E_INVALID_ADMIN_SIGNATURE);
+
+    uint8_t sig[64];
+    if (!secp256k1_schnorr_sign(ctx, sig, (uint8_t *)tokens[0], nvram.privateKey[NUM_PRIVATE_KEYS - 1].key, secp256k1_nonce_function_rfc6979, NULL))
+        return fasitoError(E_COULD_NOT_CREATE_SCHNORR_SIG);
+
     memset(&nvram, 0, sizeof(FasitoNVRam));
-    nvram.version = 1;
+    nvram.version = CONFIG_VERSION;
     writeEEPROM(&nvram);
     loggedIn = false;
 
     Serial.println("All token data erased.");
+    Serial.print("PROOFSIG: "); printHex(sig, 64, true);
+
     return true;
 }
 
@@ -670,7 +686,7 @@ static bool doSign(const char **tokens, const uint8_t nTokens, bool schnorr)
 /**
  * ECDSA <index: 0-7> <sha256 hash>
  */
-static bool cmsEcdsaSign(const char **tokens, const uint8_t nTokens)
+static bool cmdEcdsaSign(const char **tokens, const uint8_t nTokens)
 {
     return doSign(tokens, nTokens, false);
 }
@@ -841,18 +857,19 @@ static bool cmdCreateKeyProof(const char **tokens, const uint8_t nTokens)
     if (p.status != PrivateKey::INITIALISED)
         return fasitoError(E_SLOT_NOT_CONFIGURED);
 
-    uint8_t data[69] = { DeviceSigantureType::INITKEY }; /* type:1 + CVNID:4 + pubkey:64 = 69 */
-    if (!secp256k1_ec_pubkey_create(ctx, (secp256k1_pubkey *)&data[5], p.key))
-        return fasitoErrorStr("could not create public key.");
+    uint8_t data[68]; /* CVNID:4 + pubkey:64 = 68 */
 
     uint8_t *pNodeId = (uint8_t *)&p.nodeId;
-    data[1] = pNodeId[3];
-    data[2] = pNodeId[2];
-    data[3] = pNodeId[1];
-    data[4] = pNodeId[0];
+    data[0] = pNodeId[3];
+    data[1] = pNodeId[2];
+    data[2] = pNodeId[1];
+    data[3] = pNodeId[0];
+
+    if (!secp256k1_ec_pubkey_create(ctx, (secp256k1_pubkey *)&data[4], p.key))
+        return fasitoErrorStr("could not create public key.");
 
     uint8_t sig[64];
-    if (!createProofSignature(sig, data, sizeof(data))) {
+    if (!createDeviceSignature(sig, data, sizeof(data))) {
         return false;
     }
 
@@ -907,26 +924,26 @@ static bool cmdSealFasito(const char **tokens, const uint8_t nTokens)
 }
 
 /**
- * UNSEAL
+ * UNSEAL <optional: admin signature>
  */
 static bool cmdUnsealFasito(const char **tokens, const uint8_t nTokens)
 {
+    const uint8_t dataSeed[] = {"Fasito - UNSEAL Token"};
+
     if (nTokens > 1)
         return fasitoError(E_INVALID_ARGUMENTS);
 
-    uint8_t hash[32];
-    if (!createHash((char *) macAddress, 6, hash))
+    uint8_t requestHash[32];
+    if (!createAuthorisationRequest(AuthorisationRequestType::UNSEAL_TOKEN, dataSeed, sizeof(dataSeed), requestHash))
         return fasitoError(E_COULD_NOT_CREATE_HASH);
 
-    int8_t res = verifyAdminSignature(nTokens == 1 ? tokens[0] : 0, hash);
-    if (!res)
-        return fasitoError(E_INVALID_ADMIN_SIGNATURE);
-    else if (res == -1) {
+    if (nTokens != 1)
         return true;
-    }
+
+    if (!verifyAdminSignature(tokens[0], requestHash))
+        return fasitoError(E_INVALID_ADMIN_SIGNATURE);
 
     Serial.println("Un-sealing this Fasito.");
-    Serial.flush();
 
     return unsealDevice();
 }
@@ -1035,7 +1052,7 @@ const Command commands[] = {
         {"RSTPIN",  cmdResetPin,                         6, false},
         {"NONCE",   cmdCreateNonces,                     5, true },
         {"PARTSIG", cmdCreatePartialSchnorrSignature,    7, true },
-        {"ECDSA",   cmsEcdsaSign,                        5, true },
+        {"ECDSA",   cmdEcdsaSign,                        5, true },
         {"SCHNORR", cmdCreateSchnorrSignature,           7, true },
         {"SEAL",    cmdSealFasito,                       4, true },
         {"UNSEAL",  cmdUnsealFasito,                     6, true },

@@ -82,7 +82,7 @@ void setup()
     if (nvram.fasitoStatus != nvram.CONFIGURED) {
         Serial.println("Fasito not configured. Clearing NVRam.");
         memset(&nvram, 0, sizeof(FasitoNVRam));
-        nvram.version = 1;
+        nvram.version = CONFIG_VERSION;
         writeEEPROM(&nvram);
     }
 
