@@ -85,7 +85,7 @@ void printHelp()
     Serial.println("SNONCE <key index: 0-" NUM_PRIVATE_KEYS_STR "> <sha256 hashToSign> <sha256 randomData>\r\n\t- creates a new nonce pair, stores the private part on the device and prints out the public part");
     Serial.println("CLRPOOL\r\n\t- clears the nonce pool");
 #if ENABLE_INSCURE_FUNC
-    Serial.println("DUMP\r\n\t- dumps the contents of the eeporm and internal data structurs");
+    Serial.println("DUMP\r\n\t- dumps the contents of the eeprom and internal data structurs");
     Serial.println("SETKEY <index: 0-" NUM_PRIVATE_KEYS_STR "> <CVN ID:0x12345678> <sha256 hash>\r\n\t- initialises a pre-seeded key");
 #endif
 }
@@ -995,7 +995,7 @@ static bool cmdSetKey(const char **tokens, const uint8_t nTokens)
         return fasitoError(E_INVALID_ARGUMENTS);
 
     uint8_t index = 0;
-    if (!getIndexParameter(tokens[0], index, NUM_PRIVATE_KEYS - 2))
+    if (!getIndexParameter(tokens[0], index, NUM_PRIVATE_KEYS - 1))
         return false;
 
     /* CVN node ID */

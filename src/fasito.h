@@ -39,7 +39,7 @@ extern bool loggedIn;
 #define MIN_PIN_LENGTH       6
 
 #define NUM_PRIVATE_KEYS     8
-#define NUM_PRIVATE_KEYS_STR "8"
+#define NUM_PRIVATE_KEYS_STR "6"
 #define NUM_ADMIN_KEYS       3
 
 #define NUM_NONCE_POOL       25
