@@ -157,7 +157,7 @@ static bool verifyAdminSignature(const char *sig, uint8_t *hash)
 static bool createDeviceSignature(uint8_t *sig, const uint8_t *data, const size_t nDataLen)
 {
     uint8_t hashToSign[32];
-    if (!secp256k1_hash_sha256(ctx, hashToSign, data, nDataLen))
+    if (!secp256k1_hash_sha256d(ctx, hashToSign, data, nDataLen))
         return fasitoError(E_COULD_NOT_CREATE_HASH);
 
     if (!secp256k1_schnorr_sign(ctx, sig, hashToSign, nvram.privateKey[NUM_PRIVATE_KEYS - 1].key, secp256k1_nonce_function_rfc6979, NULL))
@@ -178,7 +178,7 @@ static bool createAuthorisationRequest(const uint8_t type, const uint8_t *privDa
     memcpy(&data[1], macAddress, 6);
     memcpy(&data[7], privHash, 32);
 
-    if (!secp256k1_hash_sha256(ctx, requestHash, data, AUTH_REQ_LEN))
+    if (!secp256k1_hash_sha256d(ctx, requestHash, data, AUTH_REQ_LEN))
         return fasitoError(E_COULD_NOT_CREATE_HASH);
 
     uint8_t sig[64];
@@ -814,7 +814,7 @@ static bool cmdGetPublicKey(const char **tokens, const uint8_t nTokens)
         return fasitoError(E_INVALID_ARGUMENTS);
 
     uint8_t index = 0;
-    if (!getIndexParameter(tokens[0], index, NUM_PRIVATE_KEYS - 2))
+    if (!getIndexParameter(tokens[0], index, NUM_PRIVATE_KEYS - 1))
         return false;
 
     if (nvram.privateKey[index].status != PrivateKey::INITIALISED)
@@ -875,11 +875,11 @@ static bool cmdCreateKeyProof(const char **tokens, const uint8_t nTokens)
 
     size_t keyLen = 74;
     uint8_t derKey[keyLen];
-    if (!secp256k1_ec_pubkey_serialize(ctx, derKey, &keyLen, (secp256k1_pubkey *)&data[5], SECP256K1_EC_UNCOMPRESSED))
+    if (!secp256k1_ec_pubkey_serialize(ctx, derKey, &keyLen, (secp256k1_pubkey *)&data[4], SECP256K1_EC_UNCOMPRESSED))
         return fasitoErrorStr("could not serialise public key.");
 
     Serial.print("SIG DATA   : "); printHex(data, sizeof(data), true);
-    Serial.print("RAW PUBKEY : "); printHex(&data[5], 64, true);
+    Serial.print("RAW PUBKEY : "); printHex(&data[4], 64, true);
     Serial.print("DER PUBKEY : "); printHex(derKey, keyLen, true);
     Serial.print("SIGNATURE  : "); printHex(sig, 64, true);
 
@@ -1013,9 +1013,6 @@ static bool cmdSetKey(const char **tokens, const uint8_t nTokens)
 
     PrivateKey *p = &nvram.privateKey[index];
 
-    if (p->status != PrivateKey::SEEDED)
-        return fasitoError(E_SLOT_BUSY);
-
     /* first check if the provided hash is a valid private key by itself */
     if (!secp256k1_ec_seckey_verify(ctx, newKey))
         return fasitoError(E_COULD_NOT_CREATE_PRIV_KEY);
@@ -1026,8 +1023,16 @@ static bool cmdSetKey(const char **tokens, const uint8_t nTokens)
     if (*pNodeId == 0)
         return fasitoError(E_INVALID_ARGUMENTS);
 
-    if (!checkDuplicateKeyInfo(*pNodeId, newKey))
+    const uint32_t nNodeId = p->nodeId;
+
+    /* unset the CVN ID so checkDuplicateKeyInfo() does not complain
+     * about duplicate a ID, in case this key has already been
+     * initialised before */
+    p->nodeId = 0x00000000;
+    if (!checkDuplicateKeyInfo(*pNodeId, newKey)) {
+        p->nodeId = nNodeId;
         return false;
+    }
 
     memcpy(p->key, newKey, 32);
 
