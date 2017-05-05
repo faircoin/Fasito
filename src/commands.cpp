@@ -22,6 +22,7 @@
 #include <string.h>
 #include <secp256k1.h>
 #include <secp256k1_schnorr.h>
+#include <secp256k1_ecdh.h>
 
 #include "utils.h"
 #include "commands.h"
@@ -84,6 +85,7 @@ void printHelp()
     Serial.println("GETPBKY <key index: 0-" NUM_PRIVATE_KEYS_STR ">\r\n\t- prints the requested public key DER encoded. First line is uncompressed, second is the compressed key");
     Serial.println("SNONCE <key index: 0-" NUM_PRIVATE_KEYS_STR "> <sha256 hashToSign> <sha256 randomData>\r\n\t- creates a new nonce pair, stores the private part on the device and prints out the public part");
     Serial.println("CLRPOOL\r\n\t- clears the nonce pool");
+    Serial.println("ECDH <index: 0-" NUM_PRIVATE_KEYS_STR "> <DER public key>\r\n\t- creates a shared secret for a local private key and the supplied public key");
 #if ENABLE_INSCURE_FUNC
     Serial.println("DUMP\r\n\t- dumps the contents of the eeprom and internal data structurs");
     Serial.println("SETKEY <index: 0-" NUM_PRIVATE_KEYS_STR "> <CVN ID:0x12345678> <sha256 hash>\r\n\t- initialises a pre-seeded key");
@@ -948,6 +950,43 @@ static bool cmdUnsealFasito(const char **tokens, const uint8_t nTokens)
     return unsealDevice();
 }
 
+/**
+ * ECDH <index: 0-7> <DER pubKey other>
+ */
+static bool cmdEcdh(const char **tokens, const uint8_t nTokens)
+{
+    if (nTokens != 2)
+        return fasitoError(E_INVALID_ARGUMENTS);
+
+    uint8_t index = 0;
+    if (!getIndexParameter(tokens[0], index, NUM_PRIVATE_KEYS - 2))
+        return false;
+
+    uint8_t derKey[65];
+    if (strlen(tokens[1]) != 130 || !parseHex(derKey, tokens[1], 65))
+        return fasitoError(E_INVALID_ARGUMENTS, 1);
+
+    secp256k1_pubkey pubKeyOther;
+    if (!secp256k1_ec_pubkey_parse(ctx, &pubKeyOther, derKey, 65)) {
+        Serial.println("secp256k1_ec_pubkey_parse failed");
+        return fasitoError(E_INVALID_ADMIN_SIGNATURE);
+    }
+
+    PrivateKey *p = &nvram.privateKey[index];
+
+    if (p->status != PrivateKey::INITIALISED)
+        return fasitoError(E_SLOT_NOT_CONFIGURED);
+
+    uint8_t secret[32];
+    if (!secp256k1_ecdh(ctx, secret, &pubKeyOther, p->key)) {
+        return fasitoErrorStr("could not create secret");
+    }
+
+    Serial.print("SHARED-SECRET: "); printHex(secret, 32, true);
+
+    return true;
+}
+
 #if ENABLE_INSCURE_FUNC
 static bool cmdDUMP(const char **tokens, const uint8_t nTokens)
 {
@@ -1071,6 +1110,7 @@ const Command commands[] = {
         {"SNONCE",  cmdCreateSingleNonce,                6, true },
         {"CLRPOOL", cmdClearNoncePool,                   7, true },
         {"KYPROOF", cmdCreateKeyProof,                   7, true },
+        {"ECDH",    cmdEcdh,                             4, true },
 #if ENABLE_INSCURE_FUNC
         {"DUMP",    cmdDUMP,                             4, false },
         {"SETKEY",  cmdSetKey,                           6, true },
