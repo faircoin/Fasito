@@ -29,7 +29,7 @@
 #include "fasito_error.h"
 #include "update.h"
 
-#define ENABLE_INSCURE_FUNC 1
+#define ENABLE_INSCURE_FUNC 0
 #if ENABLE_INSCURE_FUNC
 #warning Compiling with unsecure functions
 #endif
@@ -156,9 +156,8 @@ static bool verifyAdminSignature(const char *sig, uint8_t *hash)
     return verified ? 1 : 0;
 }
 
-static bool createDeviceSignature(uint8_t *sig, const uint8_t *data, const size_t nDataLen)
+static bool createDeviceSignature(uint8_t *sig, uint8_t *hashToSign, const uint8_t *data, const size_t nDataLen)
 {
-    uint8_t hashToSign[32];
     if (!secp256k1_hash_sha256d(ctx, hashToSign, data, nDataLen))
         return fasitoError(E_COULD_NOT_CREATE_HASH);
 
@@ -183,14 +182,26 @@ static bool createAuthorisationRequest(const uint8_t type, const uint8_t *privDa
     if (!secp256k1_hash_sha256d(ctx, requestHash, data, AUTH_REQ_LEN))
         return fasitoError(E_COULD_NOT_CREATE_HASH);
 
+    const uint8_t *privKey = nvram.privateKey[NUM_PRIVATE_KEYS - 1].key;
+
     uint8_t sig[64];
-    if (!secp256k1_schnorr_sign(ctx, sig, requestHash, nvram.privateKey[NUM_PRIVATE_KEYS - 1].key, secp256k1_nonce_function_rfc6979, NULL))
+    if (!secp256k1_schnorr_sign(ctx, sig, requestHash, privKey, secp256k1_nonce_function_rfc6979, NULL))
         return fasitoError(E_COULD_NOT_CREATE_SCHNORR_SIG);
 
-    Serial.println("AUTHREQ:");
-    printHex(data, AUTH_REQ_LEN, true);
-    printHex(requestHash, 32, true);
-    printHex(sig, 64, true);
+    secp256k1_pubkey pub;
+    if (!secp256k1_ec_pubkey_create(ctx, &pub, privKey))
+        return fasitoErrorStr("could not create public key.");
+
+    size_t keyLen = 74;
+    uint8_t pubKey[keyLen];
+    if (!secp256k1_ec_pubkey_serialize(ctx, pubKey, &keyLen, &pub, SECP256K1_EC_UNCOMPRESSED))
+        return fasitoErrorStr("could not serialise public key.");
+
+    Serial.println("AUTHREQ = {");
+    Serial.print("  \"data\": \""); printHex(data, AUTH_REQ_LEN); Serial.println("\",");
+    Serial.print("  \"hash\": \""); printHex(requestHash, 32); Serial.println("\",");
+    Serial.print("  \"pubKey\": \""); printHex(pubKey, keyLen); Serial.println("\",");
+    Serial.print("  \"signature\": \""); printHex(sig, 64); Serial.println("\"\r\n}");
 
     return true;
 }
@@ -870,20 +881,21 @@ static bool cmdCreateKeyProof(const char **tokens, const uint8_t nTokens)
     if (!secp256k1_ec_pubkey_create(ctx, (secp256k1_pubkey *)&data[4], p.key))
         return fasitoErrorStr("could not create public key.");
 
-    uint8_t sig[64];
-    if (!createDeviceSignature(sig, data, sizeof(data))) {
+    uint8_t sig[64], hashToSign[32];
+    if (!createDeviceSignature(sig, hashToSign, data, sizeof(data)))
         return false;
-    }
 
     size_t keyLen = 74;
     uint8_t derKey[keyLen];
     if (!secp256k1_ec_pubkey_serialize(ctx, derKey, &keyLen, (secp256k1_pubkey *)&data[4], SECP256K1_EC_UNCOMPRESSED))
         return fasitoErrorStr("could not serialise public key.");
 
-    Serial.print("SIG DATA   : "); printHex(data, sizeof(data), true);
-    Serial.print("RAW PUBKEY : "); printHex(&data[4], 64, true);
-    Serial.print("DER PUBKEY : "); printHex(derKey, keyLen, true);
-    Serial.print("SIGNATURE  : "); printHex(sig, 64, true);
+    Serial.println("KEYPROOF = {");
+    Serial.print("  \"proofData\": \""); printHex(data, sizeof(data)); Serial.println("\",");
+    Serial.print("  \"derPubKey\": \""); printHex(derKey, keyLen); Serial.println("\",");
+    Serial.print("  \"rawPubKey\": \""); printHex(&data[4], 64); Serial.println("\",");
+    Serial.print("  \"hash\": \""); printHex(hashToSign, 32); Serial.println("\",");
+    Serial.print("  \"signature\": \""); printHex(sig, 64); Serial.println("\"\r\n}");
 
     return true;
 }
