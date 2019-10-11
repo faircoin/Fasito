@@ -1,7 +1,7 @@
 /*
- * Copyright (c) 2017 by Thomas König <tom@fair-coin.org>
+ * Copyright (c) 2019 by Thomas König <tom@fair-coin.org>
  *
- * fasito_usb_id.h is part of Fasito, the FairCoin signature token.
+ * version.h is part of Fasito, the FairCoin signature token.
  *
  * Fasito is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,15 +18,16 @@
  * If not, see <http://www.gnu.org/licenses/>.
  */
 
+#ifndef VERSION_H_
+#define VERSION_H_
 
-#ifndef SRC_FASITO_USB_ID_H_
-#define SRC_FASITO_USB_ID_H_
+#define __FASITO_VERSION_MAJOR__ 1
+#define __FASITO_VERSION_MINOR__ 2
 
-#include "version.h"
+#define STR_NAME(s) #s
+#define STR(s) STR_NAME(s)
+#define __FASITO_VERSION__ "v" STR(__FASITO_VERSION_MAJOR__) "." STR(__FASITO_VERSION_MINOR__)
 
-#define MANUFACTURER_NAME {'T','h','e',' ','F','a','i','r','C','o','i','n',' ','d','e','v','e','l','o','p','e','r','s'}
-#define MANUFACTURER_NAME_LEN 23
-#define PRODUCT_NAME      {'F','a','s','i','t','o',' ','V',('0' + __FASITO_VERSION_MAJOR__),'.',('0' + __FASITO_VERSION_MINOR__)}
-#define PRODUCT_NAME_LEN  11
+#define CONFIG_VERSION 1
 
-#endif /* SRC_FASITO_USB_ID_H_ */
+#endif /* VERSION_H_ */

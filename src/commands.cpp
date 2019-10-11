@@ -60,6 +60,7 @@ enum AuthorisationRequestType {
 
 void printHelp()
 {
+    Serial.println(CLS "\r\n");
     printVersion();
     Serial.println("======================================");
     Serial.println("             Help screen:\r\n");
@@ -94,14 +95,14 @@ void printHelp()
 
 void printVersion()
 {
-    Serial.println(CLS "\r\nFasito - FairCoin signature token v" __FASITO_VERSION__ );
+    Serial.println("Fasito - FairCoin signature token " __FASITO_VERSION__ );
 }
 
 void printStatus()
 {
     uint8_t i;
 
-    Serial.print("Fasito version    : v" __FASITO_VERSION__  "\r\n");
+    Serial.print("Fasito version    : " __FASITO_VERSION__  "\r\n");
     Serial.print("Serial number     : "); printHex(macAddress, 6, true);
     Serial.print("Token status      : "); Serial.println(fasitoNVRamStatus[nvram.fasitoStatus]);
     const uint8_t nProtectionState = FTFL_FSEC;

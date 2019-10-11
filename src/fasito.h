@@ -21,10 +21,8 @@
 #ifndef SRC_FASITO_H_
 #define SRC_FASITO_H_
 
+#include "version.h"
 #include <secp256k1.h>
-
-#define __FASITO_VERSION__ "1.2"
-#define CONFIG_VERSION 1
 
 /* serial receive buffer size */
 #define INPUT_BUFFER_SIZE 2048
