@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 by Thomas König <tom@fair-coin.org>
+ * Copyright (c) 2017-2019 by Thomas König <tom@fair-coin.org>
  *
  * commands.cpp is part of Fasito, the FairCoin signature token.
  *
@@ -35,7 +35,7 @@
 #endif
 
 #define ENOUGH_BITS_VALUE   800
-#define AUTH_REQ_LEN        39
+#define AUTH_REQ_LEN        41
 
 extern secp256k1_context *ctx;
 extern uint8_t macAddress[];
@@ -105,7 +105,8 @@ void printStatus()
     Serial.print("Serial number     : "); printHex(macAddress, 6, true);
     Serial.print("Token status      : "); Serial.println(fasitoNVRamStatus[nvram.fasitoStatus]);
     const uint8_t nProtectionState = FTFL_FSEC;
-    Serial.print("Protection status : 0x"); Serial.print(nProtectionState, BIN); Serial.print(" (0x"); Serial.print(nProtectionState, HEX); Serial.println(")");
+    Serial.print("Protection status : 0x"); Serial.print(nProtectionState, BIN); Serial.print(" (0x"); Serial.print(nProtectionState, HEX); Serial.print(")");
+    Serial.print(", AUTH-Requests: "); Serial.println(nvram.resetCount);
     Serial.print("Config version    : "); Serial.println(nvram.version);
     Serial.print("Config checksum   : "); Serial.print(nvram.checksum, HEX); Serial.println();
     Serial.print("Nonce pool size   : "); Serial.print(NUM_NONCE_POOL); Serial.println("\r\n");
@@ -178,6 +179,7 @@ static bool createAuthorisationRequest(const uint8_t type, const uint8_t *privDa
     data[0] = type;
     memcpy(&data[1], macAddress, 6);
     memcpy(&data[7], privHash, 32);
+    memcpy(&data[39], &nvram.resetCount, 2);
 
     if (!secp256k1_hash_sha256d(ctx, requestHash, data, AUTH_REQ_LEN))
         return fasitoError(E_COULD_NOT_CREATE_HASH);
@@ -326,7 +328,7 @@ static bool cmdInitFasito(const char **tokens, const uint8_t nTokens)
 
         if (!secp256k1_ec_pubkey_parse(ctx, &nvram.adminPublicKey[i], derKey, 65)) {
             Serial.println("secp256k1_ec_pubkey_parse failed");
-            return fasitoError(E_INVALID_ADMIN_SIGNATURE);
+            return fasitoError(E_INVALID_ADMIN_PUB_KEY);
         }
     }
 
@@ -467,6 +469,8 @@ static bool cmdResetPin(const char **tokens, const uint8_t nTokens)
 
     const char *t[] = { nvram.userPin.pin, pin };
 
+    ++nvram.resetCount;
+
     return cmdChangePin(t, 2);
 }
 
@@ -511,6 +515,9 @@ static bool cmdResetKey(const char **tokens, const uint8_t nTokens)
     p.nodeId = 0;
     p.status = PrivateKey::SEEDED;
     memcpy(p.key, nvram.privateKey[NUM_PRIVATE_KEYS - 1].key, 32);
+
+    ++nvram.resetCount;
+
     writeEEPROM(&nvram);
 
     Serial.println("private key has been erased successfully.");
@@ -958,6 +965,9 @@ static bool cmdUnsealFasito(const char **tokens, const uint8_t nTokens)
         return fasitoError(E_INVALID_ADMIN_SIGNATURE);
 
     Serial.println("Un-sealing this Fasito.");
+
+    ++nvram.resetCount;
+    writeEEPROM(&nvram);
 
     return unsealDevice();
 }

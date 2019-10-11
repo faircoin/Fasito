@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 by Thomas König <tom@fair-coin.org>
+ * Copyright (c) 2017-2019 by Thomas König <tom@fair-coin.org>
  *
  * fasito.h is part of Fasito, the FairCoin signature token.
  *
@@ -23,7 +23,7 @@
 
 #include <secp256k1.h>
 
-#define __FASITO_VERSION__ "1.1"
+#define __FASITO_VERSION__ "1.2"
 #define CONFIG_VERSION 1
 
 /* serial receive buffer size */
@@ -88,7 +88,7 @@ typedef struct FasitoNVRam {
     secp256k1_pubkey adminPublicKey[3];
 
     /* checksum needs to remain the last field */
-    uint16_t   padding;
+    uint16_t   resetCount;
     uint16_t   checksum;
 } FasitoNVRam;
 
