@@ -66,6 +66,7 @@ void setup()
 
     delay(2000);
     readMAC(macAddress);
+    Serial.println(CLS "\r\n");
     printVersion();
     *inputBuffer = 0;
     inputBufferIndex = 0;
