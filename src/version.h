@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 by Thomas König <tom@fair-coin.org>
+ * Copyright (c) 2019-2020 by Thomas König <tom@fair-coin.org>
  *
  * version.h is part of Fasito, the FairCoin signature token.
  *
@@ -22,7 +22,7 @@
 #define VERSION_H_
 
 #define __FASITO_VERSION_MAJOR__ 1
-#define __FASITO_VERSION_MINOR__ 2
+#define __FASITO_VERSION_MINOR__ 3
 
 #define STR_NAME(s) #s
 #define STR(s) STR_NAME(s)
