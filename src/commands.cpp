@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 by Thomas König <tom@fair-coin.org>
+ * Copyright (c) 2017-2020 by Thomas König <tom@fair-coin.org>
  *
  * commands.cpp is part of Fasito, the FairCoin signature token.
  *
@@ -545,9 +545,17 @@ static bool cmdEraseToken(const char **tokens, const uint8_t nTokens)
     if (!verifyAdminSignature(tokens[0], requestHash))
         return fasitoError(E_INVALID_ADMIN_SIGNATURE);
 
-    uint8_t sig[64];
-    if (!secp256k1_schnorr_sign(ctx, sig, (uint8_t *)tokens[0], nvram.privateKey[NUM_PRIVATE_KEYS - 1].key, secp256k1_nonce_function_rfc6979, NULL))
-        return fasitoError(E_COULD_NOT_CREATE_SCHNORR_SIG);
+    /* sign back the hash of the incoming admin signature */
+    uint8_t adminSig[64];
+    if (!parseHex(adminSig, tokens[0], 64))
+        return false;
+
+    uint8_t sig[64], hashToSign[32];
+    if (!createDeviceSignature(sig, hashToSign, adminSig, 64))
+        return false;
+
+    Serial.print("PROOFHASH: "); printHex(hashToSign, 32, true);
+    Serial.print("PROOFSIG : "); printHex(sig, 64, true);
 
     memset(&nvram, 0, sizeof(FasitoNVRam));
     nvram.version = CONFIG_VERSION;
@@ -555,7 +563,6 @@ static bool cmdEraseToken(const char **tokens, const uint8_t nTokens)
     loggedIn = false;
 
     Serial.println("All token data erased.");
-    Serial.print("PROOFSIG: "); printHex(sig, 64, true);
 
     return true;
 }
