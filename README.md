@@ -1,7 +1,7 @@
 Staging tree of Fasito - the FairCoin signature token
 ---
 This project impelements the FairCoin signature token which is required to run a CVN (Cooperatively Validated Node) in the FairCoin network. For more information about FairCoin see here: https://faircoin.world
----
+
 If after running "make", you get an error complaining about arm-none-eabi-g++ not being found, install it with "apt install gcc-arm-none-eabi"
 
 ---
