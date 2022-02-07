@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 by Thomas König <tom@fair-coin.org>
+ * Copyright (c) 2017-2022 by Thomas König <tom@faircoin.world>
  *
  * utils.h is part of Fasito, the FairCoin signature token.
  *
@@ -25,8 +25,12 @@
 
 #define CLS "\033[2J"
 #define pHEX(a, b, l) { Serial.print(a ": "); printHex(b, l, true); }
-#define WFI asm("wfi")
 #define LED 13
+#ifdef FASITO_EMU
+# define WFI
+#else
+# define WFI asm("wfi")
+#endif
 
 extern FasitoNVRam nvram;
 

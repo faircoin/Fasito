@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020 by Thomas König <tom@faircoin.world>
+# Copyright (c) 2020-2022 by Thomas König <tom@faircoin.world>
 # 
 # Makefie is part of Fasito, the FairCoin signature token.
 #

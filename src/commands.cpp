@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2020 by Thomas König <tom@fair-coin.org>
+ * Copyright (c) 2017-2022 by Thomas König <tom@faircoin.world>
  *
  * commands.cpp is part of Fasito, the FairCoin signature token.
  *
@@ -28,11 +28,6 @@
 #include "commands.h"
 #include "fasito_error.h"
 #include "update.h"
-
-#define ENABLE_INSCURE_FUNC 0
-#if ENABLE_INSCURE_FUNC
-#warning Compiling with insecure commands
-#endif
 
 #define ENOUGH_BITS_VALUE   800
 #define AUTH_REQ_LEN        41
@@ -88,7 +83,7 @@ void printHelp()
     Serial.println("CLRPOOL\r\n\t- clears the nonce pool");
     Serial.println("ECDH <index: 0-" NUM_PRIVATE_KEYS_STR "> <DER public key>\r\n\t- creates a shared secret for a local private key and the supplied public key");
     Serial.println("DEVADM\r\n\t- list the " NUM_ADMIN_KEYS_STR " device admin public keys");
-#if ENABLE_INSCURE_FUNC
+#ifdef ENABLE_INSCURE_FUNC
     Serial.println("DUMP\r\n\t- dumps the contents of the eeprom and internal data structurs");
     Serial.println("SETKEY <index: 0-" NUM_PRIVATE_KEYS_STR "> <CVN ID:0x12345678> <sha256 hash>\r\n\t- initialises a pre-seeded key");
 #endif
@@ -1044,7 +1039,7 @@ static bool cmdListDeviceAdminKeys(const char **tokens, const uint8_t nTokens)
     return true;
 }
 
-#if ENABLE_INSCURE_FUNC
+#ifdef ENABLE_INSCURE_FUNC
 static bool cmdDUMP(const char **tokens, const uint8_t nTokens)
 {
     uint8_t chunck;

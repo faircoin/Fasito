@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 by Thomas König <tom@fair-coin.org>
+ * Copyright (c) 2017-2022 by Thomas König <tom@faircoin.world>
  *
  * commands.h is part of Fasito, the FairCoin signature token.
  *

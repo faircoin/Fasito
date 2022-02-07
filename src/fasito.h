@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 by Thomas König <tom@fair-coin.org>
+ * Copyright (c) 2017-2019 by Thomas König <tom@faircoin.world>
  *
  * fasito.h is part of Fasito, the FairCoin signature token.
  *
