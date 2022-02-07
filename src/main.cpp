@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 by Thomas König <tom@fair-coin.org>
+ * Copyright (c) 2017-2022 by Thomas König <tom@faircoin.world>
  *
  * main.cpp is part of Fasito, the FairCoin signature token.
  *
@@ -152,5 +152,6 @@ bool handleCommand()
     if (c->requireLogin && !loggedIn)
         return fasitoError(E_NOT_LOGGED_IN);
 
-    return c->handler(tokenise(&inputBuffer[c->len], &nTokens), nTokens);
+    const char **tokens = tokenise(&inputBuffer[c->len], &nTokens);
+    return c->handler(tokens, nTokens);
 }

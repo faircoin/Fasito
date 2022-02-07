@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 by Thomas König <tom@fair-coin.org>
+ * Copyright (c) 2017-2022 by Thomas König <tom@faircoin.world>
  *
  * utils.cpp is part of Fasito, the FairCoin signature token.
  *
@@ -193,6 +193,7 @@ void writeEEPROM(FasitoNVRam *dst)
     eeprom_write_block(dst, 0, sizeof(FasitoNVRam));
 }
 
+#ifndef FASITO_EMU
 static void readWord(uint8_t word, uint32_t *out)
 {
 
@@ -231,3 +232,4 @@ void readMAC(uint8_t *mac)
     mac[3] = m[0]; mac[4] = m[1]; mac[5] = m[2];
     __enable_irq();
 }
+#endif
