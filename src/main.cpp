@@ -152,5 +152,6 @@ bool handleCommand()
     if (c->requireLogin && !loggedIn)
         return fasitoError(E_NOT_LOGGED_IN);
 
-    return c->handler(tokenise(&inputBuffer[c->len], &nTokens), nTokens);
+    const char **tokens = tokenise(&inputBuffer[c->len], &nTokens);
+    return c->handler(tokens, nTokens);
 }
