@@ -39,6 +39,7 @@ extern bool loggedIn;
 #define NUM_PRIVATE_KEYS     8
 #define NUM_PRIVATE_KEYS_STR "6"
 #define NUM_ADMIN_KEYS       3
+#define NUM_ADMIN_KEYS_STR   "3"
 
 #define NUM_NONCE_POOL       25
 #define NUM_NONCE_POOL_STR   "25"
@@ -83,7 +84,7 @@ typedef struct FasitoNVRam {
 
     UserPIN    userPin;
     PrivateKey privateKey[NUM_PRIVATE_KEYS];
-    secp256k1_pubkey adminPublicKey[3];
+    secp256k1_pubkey adminPublicKey[NUM_ADMIN_KEYS];
 
     /* checksum needs to remain the last field */
     uint16_t   resetCount;

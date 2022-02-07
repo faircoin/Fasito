@@ -31,7 +31,7 @@
 
 #define ENABLE_INSCURE_FUNC 0
 #if ENABLE_INSCURE_FUNC
-#warning Compiling with unsecure functions
+#warning Compiling with insecure commands
 #endif
 
 #define ENOUGH_BITS_VALUE   800
@@ -87,6 +87,7 @@ void printHelp()
     Serial.println("SNONCE <key index: 0-" NUM_PRIVATE_KEYS_STR "> <sha256 hashToSign> <sha256 randomData>\r\n\t- creates a new nonce pair, stores the private part on the device and prints out the public part");
     Serial.println("CLRPOOL\r\n\t- clears the nonce pool");
     Serial.println("ECDH <index: 0-" NUM_PRIVATE_KEYS_STR "> <DER public key>\r\n\t- creates a shared secret for a local private key and the supplied public key");
+    Serial.println("DEVADM\r\n\t- list the " NUM_ADMIN_KEYS_STR " device admin public keys");
 #if ENABLE_INSCURE_FUNC
     Serial.println("DUMP\r\n\t- dumps the contents of the eeprom and internal data structurs");
     Serial.println("SETKEY <index: 0-" NUM_PRIVATE_KEYS_STR "> <CVN ID:0x12345678> <sha256 hash>\r\n\t- initialises a pre-seeded key");
@@ -437,8 +438,9 @@ static bool cmdChangePin(const char **tokens, const uint8_t nTokens)
  */
 static bool cmdResetPin(const char **tokens, const uint8_t nTokens)
 {
-    if (nTokens < 1 || nTokens > 2)
+    if (nTokens < 1 || nTokens > 2) {
         return fasitoError(E_INVALID_ARGUMENTS);
+    }
 
     const char *pin = tokens[0];
     if (!pin)
@@ -1017,6 +1019,31 @@ static bool cmdEcdh(const char **tokens, const uint8_t nTokens)
     return true;
 }
 
+/**
+ * DEVADM
+ */
+static bool cmdListDeviceAdminKeys(const char **tokens, const uint8_t nTokens)
+{
+    if (nTokens)
+        return fasitoError(E_INVALID_ARGUMENTS);
+
+    if (nvram.fasitoStatus != nvram.CONFIGURED)
+        return fasitoError(E_SLOT_NOT_CONFIGURED);
+
+    for (int i = 0 ; i < NUM_ADMIN_KEYS ; i++) {
+        size_t keyLen = 74;
+        uint8_t pubKey[keyLen];
+
+        if (!secp256k1_ec_pubkey_serialize(ctx, pubKey, &keyLen, &nvram.adminPublicKey[i], SECP256K1_EC_UNCOMPRESSED))
+            return fasitoErrorStr("could not serialise public key.");
+
+        Serial.print("Device admin public key #"); Serial.print(i); Serial.print(": ");
+        printHex(pubKey, keyLen, true);
+    }
+
+    return true;
+}
+
 #if ENABLE_INSCURE_FUNC
 static bool cmdDUMP(const char **tokens, const uint8_t nTokens)
 {
@@ -1141,6 +1168,7 @@ const Command commands[] = {
         {"CLRPOOL", cmdClearNoncePool,                   7, true },
         {"KYPROOF", cmdCreateKeyProof,                   7, true },
         {"ECDH",    cmdEcdh,                             4, true },
+        {"DEVADM",  cmdListDeviceAdminKeys,              6, false },
 #if ENABLE_INSCURE_FUNC
         {"DUMP",    cmdDUMP,                             4, false },
         {"SETKEY",  cmdSetKey,                           6, true },
