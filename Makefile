@@ -29,7 +29,7 @@
 #
 
 # All Target
-all: Fasito.hex clean-build
+all: Fasito.hex FasitoEMU clean-build
 
 obj-%:
 	@mkdir $@
@@ -132,49 +132,40 @@ obj-src/main.d \
 obj-src/update.d \
 obj-src/utils.d
 
+GCC_OPTS=-mcpu=cortex-m4 -mthumb -Os -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fsingle-precision-constant -Wall  -g -D__MK20DX256__ -DARDUINO=105 -DUSB_SERIAL -DF_CPU=96000000 -Iteensy3 -Iincludes
+
 obj-src/%.o: src/%.cpp
-	@echo 'Building file: $<'
-	@echo 'Invoking: Cross ARM C++ Compiler'
-	arm-none-eabi-g++ -mcpu=cortex-m4 -mthumb -Os -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fsingle-precision-constant -Wall  -g -D__MK20DX256__ -DARDUINO=105 -DUSB_SERIAL -DF_CPU=96000000 -I"teensy3" -I"includes" -std=gnu++0x -fabi-version=0 -fno-exceptions -fno-rtti -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@)" -c -o "$@" "$<"
-	@echo 'Finished building: $<'
-	@echo ' '
+	@echo ' $<'
+	@arm-none-eabi-g++ $(GCC_OPTS) -std=gnu++0x -fabi-version=0 -fno-exceptions -fno-rtti -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@)" -c -o "$@" "$<"
 
 obj-teensy3/%.o: teensy3/%.cpp
-	@echo 'Building file: $<'
-	@echo 'Invoking: Cross ARM C++ Compiler'
-	arm-none-eabi-g++ -mcpu=cortex-m4 -mthumb -Os -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fsingle-precision-constant -Wall  -g -D__MK20DX256__ -DARDUINO=105 -DUSB_SERIAL -DF_CPU=96000000 -I"teensy3" -I"includes" -std=gnu++0x -fabi-version=0 -fno-exceptions -fno-rtti -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@)" -c -o "$@" "$<"
-	@echo 'Finished building: $<'
-	@echo ' '
+	@echo ' $<'
+	@arm-none-eabi-g++ $(GCC_OPTS) -std=gnu++0x -fabi-version=0 -fno-exceptions -fno-rtti -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@)" -c -o "$@" "$<"
 
 obj-teensy3/%.o: teensy3/%.c
-	@echo 'Building file: $<'
-	@echo 'Invoking: Cross ARM C Compiler'
-	arm-none-eabi-gcc -mcpu=cortex-m4 -mthumb -Os -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fsingle-precision-constant -Wall  -g -D__MK20DX256__ -DARDUINO=105 -DUSB_SERIAL -DF_CPU=96000000 -I"teensy3" -I"includes" -std=gnu11 -Wstrict-prototypes -Wbad-function-cast -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@)" -c -o "$@" "$<"
-	@echo 'Finished building: $<'
-	@echo ' '
+	@echo ' $<'
+	@arm-none-eabi-gcc $(GCC_OPTS) -std=gnu11 -Wstrict-prototypes -Wbad-function-cast -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@)" -c -o "$@" "$<"
 
 obj-teensy3/%.o: teensy3/%.S
-	@echo 'Building file: $<'
-	@echo 'Invoking: Cross ARM GNU Assembler'
-	arm-none-eabi-gcc -mcpu=cortex-m4 -mthumb -Os -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fsingle-precision-constant -Wall  -g -x assembler-with-cpp -DMKL25Z4 -DHSE_VALUE=24000000 -I"teensy3" -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@)" -c -o "$@" "$<"
-	@echo 'Finished building: $<'
-	@echo ' '
+	@echo ' $<'
+	@arm-none-eabi-gcc -mcpu=cortex-m4 -mthumb -Os -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fsingle-precision-constant -Wall  -g -x assembler-with-cpp -DMKL25Z4 -Iteensy3 -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@)" -c -o "$@" "$<"
 
 Fasito.elf: obj-src obj-teensy3 $(OBJS)
-	@echo 'Building target: $@'
-	@echo 'Invoking: Cross ARM C++ Linker'
-	arm-none-eabi-g++ -mcpu=cortex-m4 -mthumb -Os -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fsingle-precision-constant -Wall  -g -T "teensy3/mk20dx256.ld" -Xlinker --gc-sections -L"libs" -Wl,-Map,"Fasito.map" --specs=nosys.specs -o "Fasito.elf" $(OBJS) -lsecp256k1
-	@echo 'Finished building target: $@'
-	@echo ' '
+	@arm-none-eabi-g++ -mcpu=cortex-m4 -mthumb -Os -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fsingle-precision-constant -Wall  -g -T teensy3/mk20dx256.ld -Xlinker --gc-sections -Llibs -Wl,-Map,Fasito.map --specs=nosys.specs -o Fasito.elf $(OBJS) -lsecp256k1
 
 Fasito.hex: Fasito.elf
-	@echo 'Invoking: Cross ARM GNU Create Flash Image'
-	arm-none-eabi-objcopy -O ihex "Fasito.elf"  "Fasito.hex"
-	@echo 'Finished building: $@'
-	@echo ' '
+	@arm-none-eabi-objcopy -O ihex Fasito.elf Fasito.hex
+
+FasitoEMU:
+	$(MAKE) -C FasitoEMU
 
 clean: clean-build
 	-rm -f Fasito.hex
 
 clean-build:
 	-rm -rf obj-src obj-teensy3 Fasito.map Fasito.elf
+
+distclean: clean
+	$(MAKE) -C FasitoEMU distclean
+
+.PHONY: FasitoEMU
