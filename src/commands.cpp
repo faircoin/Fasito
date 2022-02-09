@@ -1164,7 +1164,7 @@ const Command commands[] = {
         {"KYPROOF", cmdCreateKeyProof,                   7, true },
         {"ECDH",    cmdEcdh,                             4, true },
         {"DEVADM",  cmdListDeviceAdminKeys,              6, false },
-#if ENABLE_INSCURE_FUNC
+#ifdef ENABLE_INSCURE_FUNC
         {"DUMP",    cmdDUMP,                             4, false },
         {"SETKEY",  cmdSetKey,                           6, true },
 #endif
